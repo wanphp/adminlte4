@@ -1,7 +1,7 @@
 on:
   workflow_dispatch:
   schedule:
-    - cron:  '0 3 * * *'
+    - cron: '0 3 * * *'
 
 jobs:
   build:
@@ -10,6 +10,7 @@ jobs:
       matrix:
         node:
           - lts/*
+
     steps:
       - uses: actions/checkout@v4
 
@@ -17,7 +18,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      - run: echo "y" | rm -Rf dist
+      - run: rm -rf dist
 
       - run: git clone -b master --depth=1 --single-branch https://github.com/ColorlibHQ/AdminLTE.git
 
@@ -27,10 +28,10 @@ jobs:
           npm run production
           mv dist ../dist
 
-      - run: echo "y" | rm -R AdminLTE
+      - run: rm -rf AdminLTE
 
       - uses: peter-evans/create-pull-request@v5
         with:
-          title: build
-          body:
-          commit-message: build
+          title: "build"
+          body: ""
+          commit-message: "build"
