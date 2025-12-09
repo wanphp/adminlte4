@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: lts/*
 
-      # 获取 AdminLTE 最新 tag
+      # 获取 AdminLTE 最新的 tag
       - name: Get latest AdminLTE tag
         id: adminlte
         run: |
@@ -26,10 +26,26 @@ jobs:
           echo "Latest AdminLTE tag: $TAG"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      # 清理旧 dist
+      # 如果当前仓库已有同名 tag，就跳过
+      - name: Check if tag already exists
+        id: tagcheck
+        run: |
+          if git rev-parse "${{ steps.adminlte.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop if tag already exists
+        if: steps.tagcheck.outputs.exists == 'true'
+        run: |
+          echo "Tag ${{ steps.adminlte.outputs.tag }} already exists. Skipping."
+          exit 0
+
+      # 清理 dist
       - run: rm -rf dist
 
-      # clone 指定 tag
+      # clone AdminLTE 指定 tag
       - name: Clone AdminLTE with tag
         run: |
           git clone --depth=1 --branch "${{ steps.adminlte.outputs.tag }}" https://github.com/ColorlibHQ/AdminLTE.git
@@ -45,18 +61,18 @@ jobs:
       # 清理临时目录
       - run: rm -rf AdminLTE
 
-      # 提交并推送
-      - name: Commit and Push
+      # 提交并创建同名 tag
+      - name: Commit and Tag
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add dist
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-
           git commit -m "Update AdminLTE to ${{ steps.adminlte.outputs.tag }}"
+          git tag "${{ steps.adminlte.outputs.tag }}"
+
+      # 推送 tag 和 commit（会被连带推送）
+      - name: Push Tag
+        run: |
           git push origin main
+          git push origin "${{ steps.adminlte.outputs.tag }}"
