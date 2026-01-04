@@ -1,3 +1,5 @@
+name: Sync AdminLTE dist by tag
+
 on:
   workflow_dispatch:
   schedule:
@@ -8,25 +10,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # 1. checkout 当前仓库
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Node.js
+      # 2. 安装 Node.js（lts）
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: lts/*
 
-      # 获取 AdminLTE 最新的 tag
+      # 3. 获取 AdminLTE 最新 tag（不落盘）
       - name: Get latest AdminLTE tag
         id: adminlte
         run: |
-          git ls-remote --tags https://github.com/ColorlibHQ/AdminLTE.git | \
-            awk -F/ '{print $3}' | grep -E '^v[0-9]' | sort -V | tail -n 1 > latest_tag.txt
+          TAG=$(git ls-remote --tags https://github.com/ColorlibHQ/AdminLTE.git \
+            | awk -F/ '{print $3}' \
+            | grep -E '^v[0-9]' \
+            | sort -V \
+            | tail -n 1)
 
-          TAG=$(cat latest_tag.txt)
+          if [ -z "$TAG" ]; then
+            echo "Failed to get AdminLTE tag"
+            exit 1
+          fi
+
           echo "Latest AdminLTE tag: $TAG"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      # 如果当前仓库已有同名 tag，就跳过
+      # 4. 如果当前仓库已存在同名 tag，直接结束
       - name: Check if tag already exists
         id: tagcheck
         run: |
@@ -36,43 +48,52 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Stop if tag already exists
+      - name: Skip if tag already exists
         if: steps.tagcheck.outputs.exists == 'true'
         run: |
           echo "Tag ${{ steps.adminlte.outputs.tag }} already exists. Skipping."
           exit 0
 
-      # 清理 dist
-      - run: rm -rf dist
+      # 5. 清理旧 dist
+      - name: Clean dist
+        run: rm -rf dist
 
-      # clone AdminLTE 指定 tag
-      - name: Clone AdminLTE with tag
+      # 6. clone AdminLTE 指定 tag
+      - name: Clone AdminLTE
         run: |
-          git clone --depth=1 --branch "${{ steps.adminlte.outputs.tag }}" https://github.com/ColorlibHQ/AdminLTE.git
+          git clone --depth=1 --branch "${{ steps.adminlte.outputs.tag }}" \
+            https://github.com/ColorlibHQ/AdminLTE.git
 
-      # 编译 dist
+      # 7. 构建 dist
       - name: Build AdminLTE
         run: |
           cd AdminLTE
-          npm i
+          npm install
           npm run production
           mv dist ../dist
 
-      # 清理临时目录
-      - run: rm -rf AdminLTE
+      # 8. 清理临时目录
+      - name: Cleanup
+        run: rm -rf AdminLTE
 
-      # 提交并创建同名 tag
-      - name: Commit and Tag
+      # 9. 提交并创建同名 tag（仅当 dist 有变化）
+      - name: Commit and tag
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add dist
+
+          if git diff --cached --quiet; then
+            echo "No changes in dist, skipping commit and tag"
+            exit 0
+          fi
+
           git commit -m "Update AdminLTE to ${{ steps.adminlte.outputs.tag }}"
           git tag "${{ steps.adminlte.outputs.tag }}"
 
-      # 推送 tag 和 commit（会被连带推送）
-      - name: Push Tag
+      # 10. 推送 commit + tag
+      - name: Push changes
         run: |
           git push origin main
           git push origin "${{ steps.adminlte.outputs.tag }}"
